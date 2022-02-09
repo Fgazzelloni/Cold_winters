@@ -187,7 +187,7 @@ distr = winter %>%
   select(-data) %>% 
   unnest(distr)
 
-distr = nest(group_by(winter, season_label), data=-season_label)
+# distr = nest(group_by(winter, season_label), data=-season_label)
 
 p = ggplot(distr, aes(x, y)) +
   geom_vline(xintercept=32, color='red', size=0.2) +

@@ -1,0 +1,154 @@
+---
+title: "Modeling Cold weather with Prophet"
+date: 2022/02/09
+output: html_document
+---
+  
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 8, fig.height = 5)
+```
+
+
+# Question: Will cold snaps in Boston be more rare?
+
+*This is the model analysis of the project by [Kent J](https://github.com/kent37/Cold_winters)*
+  
+In this analysis, let's fit a model to predict [the cold weather](https://www.ncdc.noaa.gov) in Boston using {prophet} package for modeling sesonalities in time series. 
+For further information and quick start with using prophet please see:
+https://facebook.github.io/prophet/ or type `prophet::quick_start` in the help tab of your pane, a *quick_start.html* file will open up with some information.
+  
+
+```{r libs_mod, message=FALSE, warning=FALSE, paged.print=FALSE}
+library(tidyverse)
+library(lubridate)
+library(prophet)
+```
+
+
+```{r data_mod, message=FALSE, warning=FALSE, paged.print=FALSE}
+path = 'Logan_weather_12-2012_3-2021.csv'
+df = read_csv(path)
+```
+
+
+## Preprocessing data
+
+In order to use Propphet we need a dataframe made of two columns:
+
+- ds: date variable
+- y: the dependent variable (or the outcome)
+
+
+```{r temps_mod}
+temps = df %>% 
+  filter(REPORT_TYPE...3=='SOD') %>% 
+  select(DATE, matches('Daily.*DryBulbTemperature')) %>% 
+  mutate(date=ymd_hms(DATE),
+         year=year(date)) %>% 
+  select(year, date,
+         min="DailyMinimumDryBulbTemperature",
+         max="DailyMaximumDryBulbTemperature",
+         avg="DailyAverageDryBulbTemperature")
+temps<- temps%>% select(-year)
+head(temps)
+```
+
+### Use prophet
+
+Important is to have complete information about the date variable, and we can run 3 models:
+
+- minimum temperature model
+- maximun temperature model
+- average temperature model
+
+then combine them to see the overal the trend.
+
+```{r df_mod}
+min_df <- temps%>%select(ds=date,y=min)
+max_df<- temps%>%select(ds=date,y=max)
+avg_df <- temps%>%select(ds=date,y=avg)
+```
+
+
+#### Min model
+```{r min_pro_mod, cache=TRUE}
+min_mod <- prophet(min_df)
+min_future <- prophet::make_future_dataframe(min_mod, periods=365)
+min_forecast <- predict(min_mod,min_future)
+```
+#### Max model
+```{r max_pro_mod, cache=TRUE}
+max_mod <- prophet(max_df)
+max_future <- prophet::make_future_dataframe(max_mod, periods=365)
+max_forecast <- predict(max_mod,max_future)
+```
+
+
+#### Avg model
+```{r avg_pro_mod, cache=TRUE}
+avg_mod <- prophet(avg_df)
+avg_future <- prophet::make_future_dataframe(avg_mod, periods=365)
+avg_forecast <- predict(avg_mod,avg_future)
+```
+
+Let's see the outcome of our model with a first exploration using the `plot()` function.
+
+```{r plot1_mod}
+library(rafalib)
+mypar(3)
+plot(min_mod,min_forecast)
+plot(max_mod,max_forecast)
+plot(avg_mod,avg_forecast)
+```
+
+Then what we want is to combine the results of the three models, so we use {ggplot2} fro making the customization.
+
+##### Make the plot with ggplot2
+```{r plot2_mod}
+  ggplot()+
+  
+  geom_point(data=min_df,mapping=aes(x=ds,y=y),size=0.2,color="red") + # original data
+  geom_point(data=max_df,mapping=aes(x=ds,y=y),size=0.05,color="orange") + # original data
+  geom_point(data=avg_df,mapping=aes(x=ds,y=y),size=0.05,color="midnightblue") + # original data
+  
+  geom_line(data=min_forecast,aes(ds,yhat),color="red",size=0.3) +
+  geom_line(data=max_forecast,aes(x=ds,y=yhat_upper),size=0.05,color="darkred")+
+  geom_line(data=avg_forecast,aes(x=ds,y=yhat_lower),size=0.05,color="darkred")
+```
+
+In particular the lower level of temperatures have this trend:
+```{r plot3_mod}
+ggplot()+
+geom_line(data=min_df,aes(x=ds,y=y),size=0.3,color="grey55")+
+geom_point(data=min_forecast,aes(x=ds,y=yhat),size=0.5) 
+```
+
+The function `prophet_plot_components()` represents the trend of the temperatures at different levels:
+
+- overal trend
+- day of the week
+- day of the year
+
+To see when the picks happen. Here are represented the trends for the minimum temperature model. But it can be replicated with the max and average values.
+```{r plot4_mod}
+prophet_plot_components(min_mod, min_forecast)
+```
+
+
+Finally, here we can see the main points where the temperatures pick to the lowest values, and identify when this happend.
+```{r plot5_mod}
+plot(min_mod, min_forecast) + add_changepoints_to_plot(min_mod)
+```
+
+
+Adjust the strength of the sparse prior using the input argument changepoint_prior_scale. Larger values allow the model to fit larger seasonal fluctuations, smaller values dampen the seasonality. 
+By default, this parameter is set to 0.05. 
+
+```{r plot6_mod}
+min_mod2 <- prophet(min_df, changepoint.prior.scale = 1.5, daily.seasonality=TRUE)
+forecast <- predict(min_mod2, min_future)
+plot(min_mod2, min_forecast)
+```
+
+---
